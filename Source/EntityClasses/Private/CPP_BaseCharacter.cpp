@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "CPP_BaseCharacter.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "FL_CharacterHelper.h"
 
 
@@ -32,7 +33,6 @@ ACPP_BaseCharacter::ACPP_BaseCharacter()
 	SC_ThridPersonCameraVerticalRotator->SetupAttachment(SC_ThridPersonCameraHorizontalRotator);
 	SpringArm->SetupAttachment(SC_ThridPersonCameraVerticalRotator);
 	SC_ThridPersonCameraRoot->SetupAttachment(SpringArm);
-
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("CameraComponent"));
 	Camera->SetupAttachment(isThridView? SC_ThridPersonCameraRoot: SC_FirstPersonCameraRoot);
@@ -113,7 +113,8 @@ void ACPP_BaseCharacter::RotateCamera(FVector2D HorizontalClamp, FVector2D Verti
 	
 
 
-	VerticalRotator->SetRelativeRotation(FRotator(VerticalCurrentPitch, VerticalRotator->GetRelativeRotation().Yaw, VerticalRotator->GetRelativeRotation().Roll));
+	SC_ThridPersonCameraVerticalRotator->SetRelativeRotation(FRotator(VerticalCurrentPitch, SC_ThridPersonCameraVerticalRotator->GetRelativeRotation().Yaw, SC_ThridPersonCameraVerticalRotator->GetRelativeRotation().Roll));
+	SC_FirstPersonCameraVerticalRotator->SetRelativeRotation(FRotator(VerticalCurrentPitch, SC_FirstPersonCameraVerticalRotator->GetRelativeRotation().Yaw, SC_FirstPersonCameraVerticalRotator->GetRelativeRotation().Roll));
 
 
 	USceneComponent* HorizontalRotator = isThridView ? SC_ThridPersonCameraHorizontalRotator : SC_FirstPersonCameraHorizontalRotator;
@@ -125,17 +126,20 @@ void ACPP_BaseCharacter::RotateCamera(FVector2D HorizontalClamp, FVector2D Verti
 	if (HorizontalCurrentYaw > HorizontalClamp.Y || HorizontalCurrentYaw < HorizontalClamp.X)
 	{ 
 		HorizontalCurrentYawClamped = HorizontalCurrentYaw;
-		YawOverflow+= MouseInput.X;
+		YawOverflow += MouseInput.X;
 	}
 	else
 	{
 		HorizontalCurrentYaw += MouseInput.X;
 		HorizontalCurrentYawClamped = FMath::Clamp(HorizontalCurrentYaw, HorizontalClamp.X, HorizontalClamp.Y);
-		HorizontalRotator->SetRelativeRotation(FRotator(HorizontalRotator->GetRelativeRotation().Pitch, HorizontalCurrentYawClamped, HorizontalRotator->GetRelativeRotation().Roll));
+
+		SC_ThridPersonCameraHorizontalRotator->SetRelativeRotation(FRotator(SC_ThridPersonCameraHorizontalRotator->GetRelativeRotation().Pitch, HorizontalCurrentYawClamped, SC_ThridPersonCameraHorizontalRotator->GetRelativeRotation().Roll));
+		SC_FirstPersonCameraHorizontalRotator->SetRelativeRotation(FRotator(SC_FirstPersonCameraHorizontalRotator->GetRelativeRotation().Pitch, HorizontalCurrentYawClamped, SC_FirstPersonCameraHorizontalRotator->GetRelativeRotation().Roll));
+
 		YawOverflow = (FMath::Abs(HorizontalCurrentYawClamped) - FMath::Abs(HorizontalCurrentYaw)) * FMath::Sign(HorizontalCurrentYaw) * -1;
 	}
 
-	if(FMath::Abs(YawOverflow)>0.01f)
+	if(FMath::Abs(YawOverflow)>0.001f)
 
 		PlayerController->SetControlRotation(FRotator(PlayerController->GetControlRotation().Pitch, PlayerController->GetControlRotation().Yaw + YawOverflow, PlayerController->GetControlRotation().Roll));
 }
@@ -158,7 +162,10 @@ void ACPP_BaseCharacter::EqualizationControllerToCamera(float MinEqualizingAngle
 			PlayerController->SetControlRotation(FRotator(PlayerController->GetControlRotation().Pitch, PlayerController->GetControlRotation().Yaw + rotationAngle, PlayerController->GetControlRotation().Roll));
 
 			float cameraRotaionAngle = HorizontalRotator->GetRelativeRotation().Yaw + (-oldRotationAngle);
-			HorizontalRotator->SetRelativeRotation(FRotator(HorizontalRotator->GetRelativeRotation().Pitch, cameraRotaionAngle, HorizontalRotator->GetRelativeRotation().Roll));
+
+			SC_ThridPersonCameraHorizontalRotator->SetRelativeRotation(FRotator(SC_ThridPersonCameraHorizontalRotator->GetRelativeRotation().Pitch, cameraRotaionAngle, SC_ThridPersonCameraHorizontalRotator->GetRelativeRotation().Roll));
+			SC_FirstPersonCameraHorizontalRotator->SetRelativeRotation(FRotator(SC_FirstPersonCameraHorizontalRotator->GetRelativeRotation().Pitch, cameraRotaionAngle, SC_FirstPersonCameraHorizontalRotator->GetRelativeRotation().Roll));
+
 			oldRotationAngle = rotationAngle;
 		}
 		else
@@ -184,18 +191,20 @@ void ACPP_BaseCharacter::EqualizationControllerToCamera(float MinEqualizingAngle
 		oldRotationAngle = 0;
 	}
 }
-FVector ACPP_BaseCharacter::CalculateHeadRotation()
+FVector ACPP_BaseCharacter::CalculateHeadRotation(FVector2D HeadVerticalClamp)
 {
-	if(!isThridView)
-	{
-		SC_FirstPersonRotatorRoot->SetWorldLocation(GetMesh()->GetSocketLocation(HeadBoneName));
-	}
+
+	SC_FirstPersonRotatorRoot->SetWorldLocation(GetMesh()->GetSocketLocation(HeadBoneName));
+
 
 	FTransform meshTransform = GetMesh()->GetComponentTransform();
 
-	USceneComponent* HeadLocationComponent = isThridView ? SC_ThridPersonCameraVerticalRotator : Camera;
+	USceneComponent* HeadLocationComponent = SC_FirstPersonCameraRoot;
 
-	FVector lookWorldPoint = (HeadLocationComponent->GetForwardVector() * 100) + HeadLocationComponent->GetComponentLocation();
+	FRotator UnclampedRotation = UKismetMathLibrary::MakeRotationFromAxes(SC_FirstPersonCameraRoot->GetForwardVector(), SC_FirstPersonCameraRoot->GetRightVector(), SC_FirstPersonCameraRoot->GetUpVector());
+	FRotator ClampedRotation = FRotator(FMath::Clamp(UnclampedRotation.Pitch, HeadVerticalClamp.X, HeadVerticalClamp.Y), UnclampedRotation.Yaw, UnclampedRotation.Roll);
+
+	FVector lookWorldPoint = (ClampedRotation.Vector()* 100) + HeadLocationComponent->GetComponentLocation();
 
 	return meshTransform.InverseTransformPosition(lookWorldPoint);
 }

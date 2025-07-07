@@ -63,7 +63,6 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USceneComponent* SC_FirstPersonCameraRoot;
-	
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* Camera;
@@ -117,7 +116,7 @@ public:
 	bool equalizindNeedEnd = true;
 
 	UFUNCTION(BlueprintCallable, Category = "Public", meta = (ToolTip = "Поворот головы скелета в сторону взгляда"))
-	FVector CalculateHeadRotation();
+	FVector CalculateHeadRotation(FVector2D HeadVerticalClamp);
 
 	virtual void Tick(float DeltaTime) override;
 
