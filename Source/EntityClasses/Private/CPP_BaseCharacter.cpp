@@ -4,9 +4,6 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "FL_CharacterHelper.h"
 
-
-
-
 // Sets default values
 ACPP_BaseCharacter::ACPP_BaseCharacter()
 {
@@ -41,7 +38,8 @@ ACPP_BaseCharacter::ACPP_BaseCharacter()
 void ACPP_BaseCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	InitVariables();
+	AnimBlueprintBase = dynamic_cast<UCPP_BaseCharacterABP*>(GetMesh()->GetAnimInstance());
+	PlayerControllerBase = dynamic_cast<APlayerController*>(GetController());
 }
 
 void ACPP_BaseCharacter::ChangeCameraView(bool ThridPerson, bool Force)
@@ -80,7 +78,14 @@ void ACPP_BaseCharacter::ChangeCameraView(bool ThridPerson, bool Force)
 void ACPP_BaseCharacter::ChangeThridCameraDistance(float Direction)
 {
 	if(isThridView)
-		SetThridCameraDistance(currentThridPersonDistance+Direction);
+		SetThridCameraDistance(currentThridPersonDistance+(Direction* thridViewRegulateStep));
+
+
+	//Тут если мы в первом лице и отдаляем переходим на 3 лицо и наоборот
+	if((Direction>0 && !isThridView)||(Direction<0 && isThridView && FMath::IsNearlyEqual(currentThridPersonDistance, 0.0f, 0.0001f)))
+	{
+		ChangeCameraView(!isThridView, false);
+	}
 }
 
 void ACPP_BaseCharacter::SetThridCameraDistance(float Alpha)
@@ -89,13 +94,35 @@ void ACPP_BaseCharacter::SetThridCameraDistance(float Alpha)
 	SpringArm->TargetArmLength = FMath::Lerp(ThridPersonMinMax.X, ThridPersonMinMax.Y, currentThridPersonDistance);
 }
 
-FVector2D ACPP_BaseCharacter::CalculateMovementDirection(FVector2D Value, float MoveMultiply)
+void ACPP_BaseCharacter::MouseInput(FVector2D Value)
 {
-	MoveVector = Value.GetSafeNormal() * FMath::Clamp(MoveMultiply, 0.0f, 1.0f);
-	return MoveVector;
+	MouseVector = Value;
 }
 
-void ACPP_BaseCharacter::RotateCamera(FVector2D HorizontalClamp, FVector2D VerticalClamp, FVector2D MouseInput, float DisovewflowClampSpeed, APlayerController* PlayerController)
+void ACPP_BaseCharacter::JumpInput()
+{
+	if (CanJump())
+	{
+		MoveState = ECharacterMove_Enum::Jump;
+	}
+}
+
+void ACPP_BaseCharacter::MovementInput(FVector2D Value, float MoveMultiply)
+{
+	MoveVector = Value.GetSafeNormal() * FMath::Clamp(MoveMultiply, 0.0f, 1.0f);
+	AnimBlueprintBase->MoveVector = MoveVector;
+}
+
+/*
+	Поворот камеры
+
+	@params HorizontalClamp - Границы по горизонтале
+	VerticalClamp - Границы по вертикале
+	MouseInput - Инпут мыши
+	DisovewflowClampSpeed - Скорость перехода к максимальному клампу, если текущее значение оказывается больше клампа
+*/
+
+void ACPP_BaseCharacter::RotateCamera(FVector2D HorizontalClamp, FVector2D VerticalClamp, FVector2D MouseInput, float DisovewflowClampSpeed)
 {
 	USceneComponent* VerticalRotator = isThridView ? SC_ThridPersonCameraVerticalRotator : SC_FirstPersonCameraVerticalRotator;
 
@@ -141,10 +168,18 @@ void ACPP_BaseCharacter::RotateCamera(FVector2D HorizontalClamp, FVector2D Verti
 
 	if(FMath::Abs(YawOverflow)>0.001f)
 
-		PlayerController->SetControlRotation(FRotator(PlayerController->GetControlRotation().Pitch, PlayerController->GetControlRotation().Yaw + YawOverflow, PlayerController->GetControlRotation().Roll));
+		PlayerControllerBase->SetControlRotation(FRotator(PlayerControllerBase->GetControlRotation().Pitch, PlayerControllerBase->GetControlRotation().Yaw + YawOverflow, PlayerControllerBase->GetControlRotation().Roll));
 }
 
-void ACPP_BaseCharacter::EqualizationControllerToCamera(float MinEqualizingAngle, float EqualizingSpeedMultiply, float DeltaSeconds, float SmoothSpeedMultiply, APlayerController* PlayerController)
+/*
+	Выравнивание тела относительно головы при старте движения
+
+	@params MinEqualizingAngle - Минимальный угол при котором будет происходить выравнивание
+	EqualizingSpeedMultiply - Множитель к скорости поворота
+	SmoothSpeedMultiply - Множитель к скорости набора максимальной скорости доворота
+*/
+
+void ACPP_BaseCharacter::EqualizationControllerToCamera(float MinEqualizingAngle, float EqualizingSpeedMultiply, float DeltaSeconds, float SmoothSpeedMultiply)
 {
 	USceneComponent* HorizontalRotator = isThridView ? SC_ThridPersonCameraHorizontalRotator : SC_FirstPersonCameraHorizontalRotator;
 
@@ -159,7 +194,7 @@ void ACPP_BaseCharacter::EqualizationControllerToCamera(float MinEqualizingAngle
 			float rotationAngleClampAbs = MoveVector.Length() * EqualizingSpeedMultiply * rotationSmooth;	//Вычисление максимального воззможного доворота на кадре
 			float rotationAngle = FMath::Clamp(HorizontalRotator->GetRelativeRotation().Yaw, -rotationAngleClampAbs, rotationAngleClampAbs);	// Вычисление реального доворота на кадре
 
-			PlayerController->SetControlRotation(FRotator(PlayerController->GetControlRotation().Pitch, PlayerController->GetControlRotation().Yaw + rotationAngle, PlayerController->GetControlRotation().Roll));
+			PlayerControllerBase->SetControlRotation(FRotator(PlayerControllerBase->GetControlRotation().Pitch, PlayerControllerBase->GetControlRotation().Yaw + rotationAngle, PlayerControllerBase->GetControlRotation().Roll));
 
 			float cameraRotaionAngle = HorizontalRotator->GetRelativeRotation().Yaw + (-oldRotationAngle);
 
@@ -191,7 +226,14 @@ void ACPP_BaseCharacter::EqualizationControllerToCamera(float MinEqualizingAngle
 		oldRotationAngle = 0;
 	}
 }
-FVector ACPP_BaseCharacter::CalculateHeadRotation(FVector2D HeadVerticalClamp)
+
+/*
+	Поворот головы
+
+	@params HeadVerticalClamp - Границы в которых поворот осуществляется головой. Вычисляет targetLocation и передаёт в ABP
+*/
+
+void ACPP_BaseCharacter::CalculateHeadRotation(FVector2D HeadVerticalClamp)
 {
 
 	SC_FirstPersonRotatorRoot->SetWorldLocation(GetMesh()->GetSocketLocation(HeadBoneName));
@@ -206,18 +248,37 @@ FVector ACPP_BaseCharacter::CalculateHeadRotation(FVector2D HeadVerticalClamp)
 
 	FVector lookWorldPoint = (ClampedRotation.Vector()* 100) + HeadLocationComponent->GetComponentLocation();
 
-	return meshTransform.InverseTransformPosition(lookWorldPoint);
-}
-
-void ACPP_BaseCharacter::InitVariables()
-{
-
+	AnimBlueprintBase->LookAtLocation = meshTransform.InverseTransformPosition(lookWorldPoint);
 }
 
 
 void ACPP_BaseCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	AnimBlueprintBase->MoveState = MoveState;
+
+	EqualizationControllerToCamera(5.0, (isThridView ? 3.0 : 10.0) * normalizingSpeed, DeltaTime, 3.0* normalizingSpeed);
+
+	CalculateHeadRotation(FVector2D(-55.0, 55.0));
+
+	RotateCamera(HorizontalAbsClamp, VerticalAbsClamp, MouseVector * mouseSensetive, 2);
+
+	if(GetCharacterMovement()->IsMovingOnGround())
+	{
+		MoveState = MoveVector.IsNearlyZero(0.001f) ? (ECharacterMove_Enum::Stay) : (ECharacterMove_Enum::Move);
+		fallTime = 0;
+		GetCharacterMovement()->MaxStepHeight = onGroundStepHeight;
+	}
+	else
+	{
+		MoveState = ECharacterMove_Enum::Fall;
+
+		fallTime = fallTime + DeltaTime;
+		AnimBlueprintBase->FallTime = fallTime;
+		GetCharacterMovement()->MaxStepHeight = fallStepHeight;
+
+	}
 }
 
 void ACPP_BaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
