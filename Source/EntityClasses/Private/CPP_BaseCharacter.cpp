@@ -38,10 +38,16 @@ ACPP_BaseCharacter::ACPP_BaseCharacter()
 void ACPP_BaseCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
 	AnimBlueprintBase = dynamic_cast<UCPP_BaseCharacterABP*>(GetMesh()->GetAnimInstance());
-	PlayerControllerBase = dynamic_cast<APlayerController*>(GetController());
 }
 
+void ACPP_BaseCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	PlayerControllerBase = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	int a = 1;
+}
 void ACPP_BaseCharacter::ChangeCameraView(bool ThridPerson, bool Force)
 {
 	if(Force)
@@ -262,7 +268,9 @@ void ACPP_BaseCharacter::Tick(float DeltaTime)
 
 	CalculateHeadRotation(FVector2D(-55.0, 55.0));
 
-	RotateCamera(HorizontalAbsClamp, VerticalAbsClamp, MouseVector * mouseSensetive, 2);
+	float CurrentHorizontalAbsClamp = FMath::Lerp(HorizontalAbsClamp.X, HorizontalAbsClamp.Y, MoveVector.Length());
+	float CurrentVerticalAbsClamp = FMath::Lerp(VerticalAbsClamp.X, VerticalAbsClamp.Y, MoveVector.Length());
+	RotateCamera(FVector2D(-CurrentHorizontalAbsClamp, CurrentHorizontalAbsClamp), FVector2D(-CurrentVerticalAbsClamp, CurrentVerticalAbsClamp), MouseVector * mouseSensetive, 2);
 
 	if(GetCharacterMovement()->IsMovingOnGround())
 	{
