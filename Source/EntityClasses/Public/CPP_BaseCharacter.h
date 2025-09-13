@@ -116,8 +116,6 @@ public:
 
 public:
 
-	
-
 	UFUNCTION(BlueprintCallable, Category = "Public", meta= (ToolTip = "Изменить вид камеры (1-3 лицо)"))
 	void ChangeCameraView(bool ThridPerson, bool Force);
 
